@@ -6,8 +6,10 @@ namespace App\Modules\Admin\Services;
 
 use App\Modules\Admin\Models\PlatformAdmin;
 use App\Modules\Admin\Models\PlatformOrganization;
+use App\Modules\Admin\Models\PlatformPlan;
 use App\Modules\Admin\Notifications\AccountStatusNotification;
 use App\Modules\Admin\Support\AdminAccess;
+use App\Modules\Billing\Models\Plan;
 use App\Modules\Tenancy\Models\Organization;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -20,8 +22,9 @@ use InvalidArgumentException;
  * Chaque action est écrite avec le rôle `nova_platform` et consignée dans le journal d'audit (avant / après quand c'est utile). Les
  * transitions de compte (suspension, levée, suppression) restent dans `OrganizationLifecycle`.
  *
- * Volontairement absent : tout ce qui touche à l'argent d'un client (remise, remboursement, paiement marqué reçu, changement de formule
- * par l'équipe, relance de paiement). Cela demande des décisions de facturation non prises (docs/10, docs/31 §10).
+ * Volontairement absent : tout ce qui touche à l'argent d'un client (remise, remboursement, paiement marqué reçu, relance de paiement).
+ * Cela demande des décisions de facturation non prises (docs/10, docs/31 §10). Seule exception, décidée par le fondateur (2026-11-02,
+ * aucun prestataire de paiement encore branché) : `grantPlan()` accorde une formule sans paiement, pour les essais et démonstrations.
  */
 final class ClientManager
 {
@@ -156,6 +159,50 @@ final class ClientManager
         $this->notifyOwner($org, 'organization.trial_extended', $reason, $end);
 
         return $end;
+    }
+
+    /** Statuts de compte auxquels on peut accorder une formule : essai, actif, impayé, ou suspendu par le système (essai terminé, impayé). */
+    public static function canGrantPlan(PlatformOrganization $org): bool
+    {
+        return in_array($org->status, [Organization::STATUS_TRIAL, Organization::STATUS_ACTIVE, Organization::STATUS_PAST_DUE], true)
+            || ($org->status === Organization::STATUS_SUSPENDED && str_starts_with((string) $org->suspension_reason, 'system.'));
+    }
+
+    /**
+     * Accorde une formule SANS paiement (essais, démonstrations, geste commercial : aucun prestataire de paiement n'est encore branché).
+     * Le compte devient actif avec les limites de cette formule ; aucun abonnement ni facture n'est créé, donc aucun prélèvement ni
+     * renouvellement. Refusé si le client a un abonnement en cours (son changement de formule passe par sa page Facturation).
+     *
+     * @throws InvalidArgumentException statut, formule ou abonnement en cours
+     */
+    public function grantPlan(PlatformAdmin $admin, PlatformOrganization $org, string $planId, ?string $reason): void
+    {
+        AdminAccess::authorize($admin, 'subscriptions.edit');
+
+        if (! self::canGrantPlan($org)) {
+            throw new InvalidArgumentException('Ce compte ne peut pas recevoir de formule dans son état actuel.');
+        }
+
+        $db = DB::connection(PlatformAudit::CONNECTION);
+        $plan = PlatformPlan::query()->where('status', Plan::ACTIVE)->whereNull('superseded_by')->whereIn('type', Plan::BILLABLE_TYPES)->find($planId)
+            ?? throw new InvalidArgumentException('Formule inconnue ou indisponible.');
+
+        if ($db->table('subscriptions')->where('org_id', $org->id)->whereIn('status', ['active', 'past_due'])->exists()) {
+            throw new InvalidArgumentException('Ce client a un abonnement en cours.');
+        }
+
+        $previousPlan = $org->plan_id;
+        $previousStatus = $org->status;
+
+        $db->transaction(function () use ($org, $plan, $admin, $reason, $previousPlan, $previousStatus): void {
+            $org->forceFill([
+                'plan_id' => $plan->id, 'status' => Organization::STATUS_ACTIVE, 'previous_status' => null, 'suspended_at' => null, 'suspension_reason' => null,
+            ])->save();
+
+            PlatformAudit::record($admin->id, 'client.plan_granted', $org->id, 'organizations', $org->id, [
+                'plan' => $plan->code, 'plan_id' => [$previousPlan, $plan->id], 'status' => [$previousStatus, Organization::STATUS_ACTIVE], 'billed' => false,
+            ], $reason);
+        });
     }
 
     /**
