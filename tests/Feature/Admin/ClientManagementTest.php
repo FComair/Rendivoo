@@ -129,6 +129,45 @@ describe('prolongation d\'essai', function (): void {
     });
 });
 
+describe('formule accordée sans paiement', function (): void {
+    beforeEach(function (): void {
+        $this->planId = (string) DB::connection('pgsql_owner')->table('plans')->where('code', 'business')->whereNull('superseded_by')->value('id');
+    });
+
+    it('active le compte avec la formule, sans abonnement ni facture, et trace', function (): void {
+        ($this->manager)()->grantPlan($this->admin, ($this->org2)(), $this->planId, 'Essai interne');
+
+        $org = ($this->org2)();
+        expect($org->status)->toBe('active')->and($org->plan_id)->toBe($this->planId);
+        expect(DB::connection('pgsql_owner')->table('subscriptions')->where('org_id', $org->id)->count())->toBe(0)
+            ->and(DB::connection('pgsql_owner')->table('invoices')->where('org_id', $org->id)->count())->toBe(0);
+        expect(($this->audit)('client.plan_granted'))->toHaveCount(1);
+    });
+
+    it('rétablit un compte suspendu à la fin de son essai', function (): void {
+        ($this->set)($this->org->id, ['status' => 'suspended', 'suspension_reason' => 'system.trial_ended', 'suspended_at' => now()]);
+
+        ($this->manager)()->grantPlan($this->admin, ($this->org2)(), $this->planId, null);
+
+        $org = ($this->org2)();
+        expect($org->status)->toBe('active')->and($org->suspension_reason)->toBeNull();
+    });
+
+    it('refuse une formule inconnue, un compte suspendu par la plateforme et un abonnement en cours', function (): void {
+        expect(fn () => ($this->manager)()->grantPlan($this->admin, ($this->org2)(), '00000000-0000-0000-0000-000000000000', null))->toThrow(InvalidArgumentException::class);
+
+        ($this->set)($this->org->id, ['status' => 'suspended', 'suspension_reason' => 'Fraude']);
+        expect(fn () => ($this->manager)()->grantPlan($this->admin, ($this->org2)(), $this->planId, null))->toThrow(InvalidArgumentException::class);
+
+        ($this->set)($this->org->id, ['status' => 'active', 'suspension_reason' => null]);
+        DB::connection('pgsql_owner')->table('subscriptions')->insert([
+            'id' => (string) Illuminate\Support\Str::uuid7(), 'org_id' => $this->org->id, 'plan_id' => $this->planId, 'status' => 'active', 'provider' => 'fake',
+            'current_period_start' => now(), 'current_period_end' => now()->addMonth(), 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        expect(fn () => ($this->manager)()->grantPlan($this->admin, ($this->org2)(), $this->planId, null))->toThrow(InvalidArgumentException::class);
+    });
+});
+
 describe('informations, étiquettes et notes', function (): void {
     it('corrige les informations et journalise l\'ancien et le nouveau contenu', function (): void {
         $changes = ($this->manager)()->updateDetails($this->admin, ($this->org2)(), ['name' => 'Salon Aurore Bruxelles']);

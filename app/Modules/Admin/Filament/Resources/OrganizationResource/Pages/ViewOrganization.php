@@ -51,6 +51,7 @@ class ViewOrganization extends ViewRecord
         return [
             ClientActions::editDetails()->record(fn () => $this->organization()),
             ClientActions::extendTrial()->record(fn () => $this->organization()),
+            ClientActions::grantPlan()->record(fn () => $this->organization()),
             $this->noteAction(),
             ClientActions::tag()->record(fn () => $this->organization()),
             $this->exportProfileAction(),

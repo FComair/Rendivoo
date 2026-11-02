@@ -6,10 +6,12 @@ namespace App\Modules\Admin\Filament\Support;
 
 use App\Modules\Admin\Models\PlatformAdmin;
 use App\Modules\Admin\Models\PlatformOrganization;
+use App\Modules\Admin\Models\PlatformPlan;
 use App\Modules\Admin\Services\ClientExport;
 use App\Modules\Admin\Services\ClientManager;
 use App\Modules\Admin\Support\AdminAccess;
 use App\Modules\Admin\Support\SupportAccess;
+use App\Modules\Billing\Models\Plan;
 use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Field;
@@ -133,6 +135,20 @@ final class ClientActions
             ->modalHeading(__('clients.trial.heading'))->modalDescription(__('clients.trial.description'))
             ->schema(self::trialFields())
             ->action(fn (array $data, Model $record) => self::perform(fn (PlatformAdmin $admin) => app(ClientManager::class)->extendTrial($admin, self::organization($record), (int) $data['days'], self::reason($data)), __('clients.trial.done')));
+    }
+
+    /** Accorde une formule sans paiement (essais et démonstrations : aucun prestataire de paiement n'est encore branché). */
+    public static function grantPlan(): Action
+    {
+        return Action::make('grant_plan')->label(__('clients.actions.grant_plan'))->icon('heroicon-m-gift')->color('gray')
+            ->visible(fn (Model $record): bool => ClientManager::canGrantPlan(self::organization($record)) && AdminAccess::can('subscriptions.edit'))
+            ->modalHeading(__('clients.grant.heading'))->modalDescription(__('clients.grant.description'))
+            ->schema([
+                Select::make('plan_id')->label(__('clients.grant.plan'))->required()->native(false)
+                    ->options(fn (): array => PlatformPlan::query()->where('status', Plan::ACTIVE)->whereNull('superseded_by')->whereIn('type', Plan::BILLABLE_TYPES)->orderBy('price_monthly_cents')->pluck('name', 'id')->all()),
+                Textarea::make('reason')->label(__('admin.sensitive.reason'))->helperText(__('admin.sensitive.reason_help'))->rows(3)->maxLength(500),
+            ])
+            ->action(fn (array $data, Model $record) => self::perform(fn (PlatformAdmin $admin) => app(ClientManager::class)->grantPlan($admin, self::organization($record), (string) $data['plan_id'], self::reason($data)), __('clients.grant.done')));
     }
 
     /**
