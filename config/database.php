@@ -96,6 +96,9 @@ return [
             'prefix' => '',
             'prefix_indexes' => true,
             'search_path' => 'public',
+            // Session toujours en UTC : Laravel écrit les dates en heure UTC sans décalage ; sans ceci, un serveur PostgreSQL réglé sur
+            // Europe/Brussels les relit comme des heures belges (rendez-vous affiché une heure trop tôt en hiver, deux en été).
+            'timezone' => 'UTC',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
@@ -114,6 +117,9 @@ return [
             'prefix' => '',
             'prefix_indexes' => true,
             'search_path' => 'public',
+            // Session toujours en UTC : Laravel écrit les dates en heure UTC sans décalage ; sans ceci, un serveur PostgreSQL réglé sur
+            // Europe/Brussels les relit comme des heures belges (rendez-vous affiché une heure trop tôt en hiver, deux en été).
+            'timezone' => 'UTC',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
@@ -128,6 +134,9 @@ return [
             'prefix' => '',
             'prefix_indexes' => true,
             'search_path' => 'public',
+            // Session toujours en UTC : Laravel écrit les dates en heure UTC sans décalage ; sans ceci, un serveur PostgreSQL réglé sur
+            // Europe/Brussels les relit comme des heures belges (rendez-vous affiché une heure trop tôt en hiver, deux en été).
+            'timezone' => 'UTC',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
