@@ -145,7 +145,7 @@ final class ClientActions
             ->modalHeading(__('clients.grant.heading'))->modalDescription(__('clients.grant.description'))
             ->schema([
                 Select::make('plan_id')->label(__('clients.grant.plan'))->required()->native(false)
-                    ->options(fn (): array => PlatformPlan::query()->where('status', Plan::ACTIVE)->whereNull('superseded_by')->whereIn('type', Plan::BILLABLE_TYPES)->orderBy('price_monthly_cents')->pluck('name', 'id')->all()),
+                    ->options(fn (): array => PlatformPlan::query()->where('status', Plan::ACTIVE)->whereNull('superseded_by')->whereIn('plan_type', Plan::BILLABLE_TYPES)->orderBy('price_monthly_cents')->pluck('name', 'id')->all()),
                 Textarea::make('reason')->label(__('admin.sensitive.reason'))->helperText(__('admin.sensitive.reason_help'))->rows(3)->maxLength(500),
             ])
             ->action(fn (array $data, Model $record) => self::perform(fn (PlatformAdmin $admin) => app(ClientManager::class)->grantPlan($admin, self::organization($record), (string) $data['plan_id'], self::reason($data)), __('clients.grant.done')));

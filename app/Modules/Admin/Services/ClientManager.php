@@ -184,7 +184,7 @@ final class ClientManager
         }
 
         $db = DB::connection(PlatformAudit::CONNECTION);
-        $plan = PlatformPlan::query()->where('status', Plan::ACTIVE)->whereNull('superseded_by')->whereIn('type', Plan::BILLABLE_TYPES)->find($planId)
+        $plan = PlatformPlan::query()->where('status', Plan::ACTIVE)->whereNull('superseded_by')->whereIn('plan_type', Plan::BILLABLE_TYPES)->find($planId)
             ?? throw new InvalidArgumentException('Formule inconnue ou indisponible.');
 
         if ($db->table('subscriptions')->where('org_id', $org->id)->whereIn('status', ['active', 'past_due'])->exists()) {
